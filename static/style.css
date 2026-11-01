@@ -201,3 +201,6 @@ button.ghost {
 button.ghost:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
 button.ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 .pill.paused { background: var(--amber-soft); color: var(--amber); }
+
+/* [hidden] 会被 .drop img 的 display:block 覆盖，这里显式压回去 */
+.drop img[hidden] { display: none !important; }

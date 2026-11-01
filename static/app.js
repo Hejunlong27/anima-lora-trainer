@@ -9,7 +9,7 @@ function activateTab(name) {
   t.classList.add("active");
   $("tab-" + name).classList.add("active");
   if (name === "out") loadOutputs();
-  if (name === "mat") { prefillMate(); refreshGpu(); }
+  if (name === "mat") { prefillMate(); refreshGpu(); checkComfy(); }
   history.replaceState(null, "", "#" + name);
 }
 
@@ -367,14 +367,15 @@ $("g-drop").addEventListener("drop", (e) => {
   if (f) uploadRef(f);
 });
 
-document.querySelector('.tab[data-tab="mat"]').addEventListener("click", async () => {
+async function checkComfy() {
   try {
     const c = await api("/api/comfy");
     const t = $("g-comfy");
     t.textContent = c.online ? "ComfyUI 在线" : "ComfyUI 未启动";
     t.className = "tag " + (c.online ? "ok" : "bad");
   } catch (e) { /* ignore */ }
-});
+}
+document.querySelector('.tab[data-tab="mat"]').addEventListener("click", checkComfy);
 
 function rollSeed() {
   const v = Math.floor(Math.random() * 2147483646) + 1;
