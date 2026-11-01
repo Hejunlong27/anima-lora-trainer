@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anima LoRA Trainer</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">A</div>
+    <div>
+      <h1>Anima LoRA Trainer</h1>
+      <p class="sub">RTX 4060 Laptop 8G · Anima-Base v1.0 · sd-scripts</p>
+    </div>
+  </div>
+  <div class="meters">
+    <div class="meter"><span>显存</span><b id="m-gpu">—</b></div>
+    <div class="meter"><span>利用率</span><b id="m-util">—</b></div>
+    <div class="meter"><span>功耗</span><b id="m-pw">—</b></div>
+    <div class="meter"><span>温度</span><b id="m-temp">—</b></div>
+    <div class="meter"><span>内存</span><b id="m-ram">—</b></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="train">训练</button>
+  <button class="tab" data-tab="mat">素材</button>
+  <button class="tab" data-tab="infer">推理试跑</button>
+  <button class="tab" data-tab="data">数据集检查</button>
+  <button class="tab" data-tab="out">输出</button>
+  <button class="tab" data-tab="log">记录</button>
+</nav>
+
+<main>
+  <section id="tab-train" class="panel active">
+    <div class="grid">
+      <div class="card">
+        <h2>训练配置</h2>
+        <label>数据集目录
+          <select id="dataset-select"></select>
+        </label>
+        <label>或手动输入路径
+          <input id="dataset-path" placeholder="D:/anima-train/dataset/xianxia_female">
+        </label>
+        <div class="row">
+          <label>输出名
+            <input id="name" placeholder="留空自动命名">
+          </label>
+          <label>分辨率
+            <select id="resolution">
+              <option value="512">512</option>
+              <option value="640" selected>640</option>
+              <option value="768">768</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>训练步数
+            <input id="steps" type="number" value="300" min="10" step="50">
+          </label>
+          <label>保存间隔
+            <input id="save_every" type="number" placeholder="自动" min="10">
+          </label>
+        </div>
+        <div class="row">
+          <label>Rank
+            <select id="dim">
+              <option value="16">16</option>
+              <option value="32" selected>32</option>
+              <option value="64">64</option>
+            </select>
+          </label>
+          <label>学习率
+            <select id="lr">
+              <option value="1e-5">1e-5</option>
+              <option value="2e-5" selected>2e-5</option>
+              <option value="5e-5">5e-5</option>
+              <option value="1e-4">1e-4</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>优化器
+            <select id="optimizer">
+              <option value="AdamW8bit" selected>AdamW8bit</option>
+              <option value="AdamW">AdamW</option>
+              <option value="adafactor">adafactor</option>
+            </select>
+          </label>
+          <label>种子
+            <input id="seed" type="number" value="42">
+          </label>
+        </div>
+        <div class="presets">
+          <span>预设</span>
+          <button class="chip" data-steps="300" data-dim="32" data-res="640">快速验证 300</button>
+          <button class="chip" data-steps="1200" data-dim="32" data-res="640">标准 1200</button>
+          <button class="chip" data-steps="1800" data-dim="32" data-res="640">完整 1800</button>
+        </div>
+        <div class="actions">
+          <button id="btn-start" class="primary">开始训练</button>
+          <button id="btn-pause" class="ghost" disabled>暂停</button>
+          <button id="btn-stop" class="danger" disabled>停止</button>
+        </div>
+        <p class="hint">提示：训练需独占 GPU。开始前请确认 ComfyUI 已关闭，否则显存不足。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>运行状态</h2>
+          <span id="pill" class="pill idle">空闲</span>
+        </div>
+        <div class="bar"><div id="bar-fill"></div></div>
+        <div class="metrics">
+          <div><span>进度</span><b id="p-step">0 / 0</b></div>
+          <div><span>速度</span><b id="p-speed">—</b></div>
+          <div><span>Loss</span><b id="p-loss">—</b></div>
+          <div><span>剩余</span><b id="p-eta">—</b></div>
+        </div>
+        <pre id="log" class="log"></pre>
+      </div>
+    </div>
+    <div class="card">
+      <h2>训练损失</h2>
+      <div class="chart-tools">
+        <select id="l-run"><option value="">最新一次</option></select>
+        <span id="l-meta" class="muted">—</span>
+      </div>
+      <div class="chart-wrap"><canvas id="loss-chart"></canvas></div>
+      <p class="hint">细线为逐 step 的当前损失，粗线为滑动平均。日志在开始训练后写入，更早的历史任务没有曲线。</p>
+    </div>
+  </section>
+
+  <section id="tab-mat" class="panel">
+    <div class="notice">
+      <span id="gpu-text">正在检查显存…</span>
+      <button id="btn-release" class="chip">释放显存（关闭 ComfyUI）</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>① 单图生成素材 · ComfyUI 工作流</h2>
+        <span id="g-comfy" class="tag">检查 ComfyUI…</span>
+      </div>
+      <div class="genmat">
+        <div class="drop" id="g-drop">
+          <input type="file" id="g-file" accept="image/*" hidden>
+          <img id="g-preview" hidden alt="参考图预览">
+          <div id="g-hint">点击选择，或把人像参考图拖到这里<br><span class="muted">正面 / 3-4 侧 / 侧面都可用</span></div>
+        </div>
+        <div>
+          <div class="row">
+            <label>预设
+              <select id="g-preset">
+                <option value="smoke_4">smoke_4 · 4 张（约 2 分钟，先验证链路）</option>
+                <option value="standard_20" selected>standard_20 · 20 张（约 9 分钟）</option>
+                <option value="extended_30">extended_30 · 30 张</option>
+                <option value="face_18">face_18 · 18 张（面部角度为主）</option>
+                <option value="ring_9">ring_9 · 9 张（八方位环拍）</option>
+                <option value="matrix_54">matrix_54 · 54 张（约 21 分钟）</option>
+              </select>
+            </label>
+            <label>数据集名
+              <input id="g-name" placeholder="character_new">
+            </label>
+          </div>
+          <div class="row">
+            <label>触发词
+              <input id="g-trigger" value="sks person">
+            </label>
+            <label>分辨率
+              <select id="g-res">
+                <option value="768">768</option>
+                <option value="1024" selected>1024</option>
+                <option value="1280">1280</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <div class="field">
+              <span class="lbl">种子</span>
+              <div class="seedrow">
+                <input id="g-seed" type="number" value="20261101">
+                <label class="inline"><input type="checkbox" id="g-rand"> 随机</label>
+                <button id="btn-roll" class="chip mini" title="立刻换一个随机种子">换一个</button>
+              </div>
+            </div>
+            <label>只跑前 N 张（0 = 全部）
+              <input id="g-max" type="number" value="0" min="0">
+            </label>
+          </div>
+          <label class="checkline"><input type="checkbox" id="g-resume"> 续跑：跳过已存在的图，只补缺的</label>
+          <button id="btn-genmat" class="primary">开始生成素材</button>
+          <p class="hint">字幕由镜头规格反推，天然不含身份词。生成期间 ComfyUI 独占显存，训练需等它结束。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>② 批量采集</h2>
+          <label>关键词（必应图片）
+            <input id="c-query" placeholder="例如：汉服 人像 全身">
+          </label>
+          <div class="row">
+            <label>数量
+              <input id="c-count" type="number" value="30" min="1" max="200">
+            </label>
+            <label>最小边（px）
+              <input id="c-minside" type="number" value="512" min="0">
+            </label>
+          </div>
+          <label>保存到
+            <input id="c-dst" placeholder="D:/anima-train/dataset/新角色">
+          </label>
+          <button id="btn-scrape" class="primary">搜索并下载</button>
+          <p class="hint">仅用于个人研究。请自行确认素材版权与肖像权。</p>
+          <hr class="sep">
+          <label>图片直链（每行一条）
+            <textarea id="c-urls" rows="3" placeholder="https://.../a.jpg"></textarea>
+          </label>
+          <div class="row">
+            <button id="btn-urls" class="chip">下载直链</button>
+            <button id="btn-import" class="chip">导入本地文件夹</button>
+          </div>
+          <label>本地源目录
+            <input id="c-src" placeholder="D:/photos/我的照片">
+          </label>
+        </div>
+
+        <div class="card">
+          <h2>③ 后处理与质检</h2>
+          <div class="row">
+            <label>源目录
+              <input id="p-src" placeholder="同上">
+            </label>
+            <label>输出目录
+              <input id="p-dst" placeholder="留空 = 源目录下 _processed">
+            </label>
+          </div>
+          <div class="row">
+            <label>目标长边
+              <select id="p-size">
+                <option value="768">768</option>
+                <option value="1024" selected>1024</option>
+                <option value="1280">1280</option>
+                <option value="1536">1536</option>
+              </select>
+            </label>
+            <label>清晰度阈值
+              <input id="p-blur" type="number" value="60" min="0">
+            </label>
+          </div>
+          <div class="row">
+            <label>去重阈值（汉明距离）
+              <input id="p-dup" type="number" value="6" min="0" max="20">
+            </label>
+            <label class="checkline"><input type="checkbox" id="p-face" checked> 人脸裁剪半身</label>
+          </div>
+          <button id="btn-process" class="primary">一键处理</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>④ 一键打标</h2>
+          <label>素材目录
+            <input id="t-dir" placeholder="留空 = 上方输出目录">
+          </label>
+          <label>打标模式
+            <select id="t-mode">
+              <option value="portrait" selected>人像（不描述长相，推荐角色 LoRA）</option>
+              <option value="general">通用（完整描述）</option>
+              <option value="style">画风（只描述风格技法）</option>
+            </select>
+          </label>
+          <div class="row">
+            <label>触发词（可选）
+              <input id="t-trigger" placeholder="例如：xhf_char">
+            </label>
+            <label class="checkline"><input type="checkbox" id="t-recap"> 覆盖已有标注</label>
+          </div>
+          <button id="btn-caption" class="primary">开始打标</button>
+          <p class="hint">本地 Qwen3-VL-4B 离线运行，约 15 秒/张。若素材由 ① 生成，字幕已自带，通常无需再打标。</p>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>流水线日志</h2>
+            <span id="m-pill" class="pill idle">空闲</span>
+          </div>
+          <div class="bar"><div id="m-bar"></div></div>
+          <pre id="m-log" class="log"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-infer" class="panel">
+    <div class="grid">
+      <div class="card">
+        <h2>推理试跑</h2>
+        <label>提示词
+          <textarea id="i-prompt" rows="4">masterpiece, best quality, a pale-skinned woman with long flowing white hair, wearing a translucent light-blue silk robe, sitting cross-legged playing a guqin on a frozen lake</textarea>
+        </label>
+        <label>负面提示词
+          <input id="i-neg" placeholder="worst quality, low quality, blurry">
+        </label>
+        <div class="row">
+          <label>LoRA
+            <select id="i-lora"><option value="">不使用</option></select>
+          </label>
+          <label>权重
+            <input id="i-mult" type="number" value="1.0" step="0.1" min="0" max="2">
+          </label>
+        </div>
+        <div class="row">
+          <label>宽 × 高
+            <input id="i-size" value="512x768">
+          </label>
+          <label>步数 / CFG
+            <input id="i-steps" value="20 / 5">
+          </label>
+        </div>
+        <div class="row">
+          <label>种子
+            <input id="i-seed" type="number" value="42">
+          </label>
+          <label>&nbsp;
+            <button id="btn-infer" class="primary">生成</button>
+          </label>
+        </div>
+        <p class="hint">同一提示词与种子，对比有无 LoRA，可判断训练是否生效。单张约 40–60 秒。</p>
+      </div>
+      <div class="card">
+        <h2>结果</h2>
+        <div id="i-result" class="result-box"><span class="muted">尚未生成</span></div>
+        <pre id="i-log" class="log short"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-data" class="panel">
+    <div class="card wide">
+      <h2>数据集检查</h2>
+      <div class="row">
+        <label>目录
+          <input id="s-path" placeholder="D:/anima-train/dataset/xianxia_female">
+        </label>
+        <label>&nbsp;
+          <button id="btn-scan" class="primary">扫描</button>
+        </label>
+      </div>
+      <div id="s-result" class="scan-result"><span class="muted">输入目录后点击扫描</span></div>
+    </div>
+  </section>
+
+  <section id="tab-log" class="panel">
+    <div class="card wide">
+      <div class="card-head">
+        <h2>训练记录</h2>
+        <div class="chart-tools">
+          <span id="r-sum" class="muted">—</span>
+          <button id="btn-runs" class="chip">刷新</button>
+        </div>
+      </div>
+      <div id="run-list" class="run-list"><span class="muted">加载中…</span></div>
+      <p class="hint">每次训练的参数快照存在 <code>runs\&lt;任务名&gt;\</code>，含 meta.json、dataset.toml 与完整命令行，可据此完全复现。</p>
+    </div>
+  </section>
+
+  <section id="tab-out" class="panel">
+    <div class="card wide">
+      <div class="card-head">
+        <h2>已训练 LoRA</h2>
+        <button id="btn-refresh" class="chip">刷新</button>
+      </div>
+      <div id="out-list" class="out-list"><span class="muted">加载中</span></div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
