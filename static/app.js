@@ -90,6 +90,7 @@ $("btn-start").addEventListener("click", async () => {
     lr: $("lr").value,
     optimizer: $("optimizer").value,
     seed: $("seed").value,
+    trigger: $("trigger").value.trim(),
   };
   const r = await api("/api/start", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg),
@@ -109,13 +110,16 @@ $("btn-stop").addEventListener("click", async () => {
   if (!r.ok) logLocal(r.error || "停止失败");
 });
 
-$("btn-infer").addEventListener("click", async () => {
+async function runInfer() {
   const size = ($("i-size").value || "512x768").split("x");
   const st = ($("i-steps").value || "20 / 5").split("/");
+  const trig = $("i-trigger").value.trim().replace(/,\s*$/, "");
+  const body = $("i-prompt").value.trim();
+  const prompt = trig ? (body ? `${trig}, ${body}` : trig) : body;
   $("i-result").innerHTML = '<span class="muted">生成中…</span>';
   const cfg = {
     kind: "infer",
-    prompt: $("i-prompt").value.trim(),
+    prompt,
     negative: $("i-neg").value.trim(),
     lora: $("i-lora").value,
     multiplier: $("i-mult").value,
@@ -129,7 +133,8 @@ $("btn-infer").addEventListener("click", async () => {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg),
   });
   if (!r.ok) $("i-result").innerHTML = `<span class="muted">${r.error}</span>`;
-});
+}
+$("btn-infer").addEventListener("click", runInfer);
 
 $("btn-scan").addEventListener("click", async () => {
   const p = $("s-path").value.trim();
@@ -535,7 +540,7 @@ async function loadRuns() {
       : "无损失日志";
     const dur = r.duration_s ? `${Math.max(1, Math.round(r.duration_s / 60))} 分钟` : "—";
     const params = r.steps_cfg
-      ? `${r.steps_cfg} 步 · rank ${r.dim || "—"} · lr ${r.lr || "—"} · ${r.optimizer || "—"} · seed ${r.seed || "—"}`
+      ? `${r.steps_cfg} 步 · rank ${r.dim || "—"} · lr ${r.lr || "—"} · ${r.optimizer || "—"} · seed ${r.seed || "—"} · 触发词 ${r.trigger || "—"}`
       : "无参数记录（由命令行脚本训练）";
     return `<div class="run-item">
       <div class="run-main">
@@ -549,11 +554,16 @@ async function loadRuns() {
       <div class="run-side">
         <div class="run-loss">${loss}</div>
         <div class="run-out">${r.output.exists ? r.output.mb + " MB" : "无产物"}</div>
+        ${r.output.exists ? `<button class="chip" data-try="${r.name}">试跑</button>` : ""}
         ${(r.state || r.output.exists) ? `<button class="chip" data-resume="${r.name}">继续训练</button>` : ""}
         <button class="chip" data-dir="${r.name}">打开目录</button>
       </div>
     </div>`;
   }).join("");
+  window.__runs = runs;
+  box.querySelectorAll("button[data-try]").forEach((b) => {
+    b.onclick = () => inferFromRun(b.dataset.try);
+  });
   box.querySelectorAll("button[data-resume]").forEach((b) => {
     b.onclick = async () => {
       const name = b.dataset.resume;
@@ -582,3 +592,51 @@ if ($("btn-runs")) {
   document.querySelector('.tab[data-tab="log"]').addEventListener("click", loadRuns);
   loadRuns();
 }
+
+function inferFromRun(name) {
+  const r = (window.__runs || []).find((x) => x.name === name);
+  if (!r) return;
+  if (!r.output || !r.output.exists) { alert("该任务没有可用产物"); return; }
+  $("i-trigger").value = r.trigger || "";
+  $("i-prompt").value = "masterpiece, best quality, full body, standing, looking at viewer, simple background";
+  $("i-seed").value = r.seed || 42;
+  const sel = $("i-lora");
+  sel.value = "";
+  for (const o of sel.options) {
+    if (o.value && o.value.endsWith("\\" + name + ".safetensors")) { sel.value = o.value; break; }
+  }
+  activateTab("infer");
+  $("i-result").innerHTML = '<span class="muted">已填入触发词与 LoRA，正在生成…</span>';
+  runInfer();
+}
+
+async function checkTrigger() {
+  const ds = ($("dataset-path").value || "").trim();
+  const tg = ($("trigger").value || "").trim();
+  const info = $("trigger-info");
+  if (!ds) { info.textContent = "请先选择数据集目录"; return; }
+  const d = await api("/api/trigger_check?dataset=" + encodeURIComponent(ds) + "&trigger=" + encodeURIComponent(tg));
+  if (!d.ok) { info.textContent = d.error || "检查失败"; return; }
+  if (!tg) {
+    info.textContent = `该数据集共 ${d.total} 条标注；未填触发词，仅做统计。`;
+    return;
+  }
+  if (d.missing === 0) {
+    info.innerHTML = `<span style="color:#3b6d11">✓ ${d.total} 条标注全部包含「${tg}」，可以直接训练。</span>`;
+  } else {
+    info.innerHTML = `<span style="color:#a32d2d">✗ ${d.total} 条标注中有 ${d.missing} 条不含「${tg}」</span> ` +
+      `<button id="btn-trigger-fix" class="chip mini">补全前缀</button>`;
+    const btn = $("btn-trigger-fix");
+    if (btn) btn.onclick = async () => {
+      if (!confirm(`将给 ${d.missing} 条缺少触发词的标注加上「${tg}, 」前缀。\n原文件会先备份到 dataset 下的 _caption_backup_* 目录。继续？`)) return;
+      btn.disabled = true;
+      const a = await api("/api/trigger_apply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset: ds, trigger: tg }),
+      });
+      if (a.ok) { alert(`已补全 ${a.updated} 条，备份在 ${a.backup || "（无改动）"}`); checkTrigger(); }
+      else alert(a.error || "补全失败");
+    };
+  }
+}
+if ($("btn-trigger")) $("btn-trigger").onclick = checkTrigger;

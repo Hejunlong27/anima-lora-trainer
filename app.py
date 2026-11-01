@@ -359,6 +359,52 @@ def find_state(name):
     return max(cands, key=lambda d: d.stat().st_mtime)
 
 
+def trigger_check(dataset, trigger):
+    d = Path(dataset)
+    if not d.is_dir():
+        return {"ok": False, "error": "目录不存在"}
+    txts = sorted(d.glob("*.txt"))
+    imgs = [f for f in d.iterdir() if f.suffix.lower() in IMG_EXT]
+    stems = {f.stem for f in imgs}
+    txts = [t for t in txts if t.stem in stems]          # 排除 README.txt 之类
+    if not trigger:
+        return {"ok": True, "total": len(txts), "hit": 0, "missing": len(txts), "trigger": ""}
+    hit = 0
+    for t in txts:
+        try:
+            if trigger.lower() in t.read_text(encoding="utf-8", errors="replace").lower():
+                hit += 1
+        except Exception:
+            pass
+    return {"ok": True, "total": len(txts), "hit": hit, "missing": len(txts) - hit,
+            "trigger": trigger}
+
+
+def trigger_apply(dataset, trigger):
+    d = Path(dataset)
+    if not d.is_dir() or not trigger:
+        return {"ok": False, "error": "目录或触发词为空"}
+    imgs = [f for f in d.iterdir() if f.suffix.lower() in IMG_EXT]
+    stems = {f.stem for f in imgs}
+    txts = [t for t in d.glob("*.txt") if t.stem in stems]
+    bak = d / f"_caption_backup_{datetime.now():%Y%m%d_%H%M%S}"
+    n = 0
+    for t in txts:
+        try:
+            txt = t.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        if trigger.lower() in txt.lower():
+            continue
+        if n == 0:
+            bak.mkdir(exist_ok=True)
+        bak.mkdir(exist_ok=True)
+        shutil.copy2(t, bak / t.name)
+        t.write_text(f"{trigger}, {txt.lstrip()}", encoding="utf-8")
+        n += 1
+    return {"ok": True, "updated": n, "backup": str(bak) if n else ""}
+
+
 def list_runs():
     recs = []
     if not RUNS.is_dir():
@@ -427,6 +473,7 @@ def list_runs():
                        "path": str(out_file) if out_file.exists() else ""},
             "loss": loss_info,
             "duration_s": dur,
+            "trigger": meta.get("trigger", ""),
             "state": (str(find_state(d.name)) if find_state(d.name) else ""),
             "total_steps": steps_cfg,
             "status": "完成" if out_file.exists() else ("已训练·无产物" if loss_info else "仅配置"),
@@ -649,6 +696,7 @@ num_repeats = 1
         "config": cfg, "steps": int(cfg.get("total_steps") or steps), "session_steps": steps,
         "dim": dim, "lr": lr, "optimizer": optimizer,
         "seed": seed, "resolution": res, "dataset": cfg["dataset"],
+        "trigger": (cfg.get("trigger") or "").strip(),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     return cmd, name
 
@@ -988,7 +1036,7 @@ def run_py_task(kind, fn, cfg):
 
 
 def start_job(kind, cfg):
-    if kind in ("train", "caption"):
+    if kind in ("train", "caption", "infer"):
         err = preflight_gpu()
         if err:
             log(f"[预检] {err}")
@@ -1171,6 +1219,8 @@ class Handler(BaseHTTPRequestHandler):
             })
         if u.path == "/api/gpu":
             return self._send(200, {"holders": gpu_holders(), "stats": gpu_stats()})
+        if u.path == "/api/trigger_check":
+            return self._send(200, trigger_check(q.get("dataset", [""])[0], q.get("trigger", [""])[0]))
         if u.path == "/api/runs":
             return self._send(200, {"runs": list_runs()})
         if u.path == "/api/loss":
@@ -1230,6 +1280,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, start_job(cfg.get("kind", "train"), cfg))
         if u.path == "/api/release_gpu":
             return self._send(200, {"ok": True, "killed": release_gpu()})
+        if u.path == "/api/trigger_apply":
+            return self._send(200, trigger_apply(cfg.get("dataset", ""), cfg.get("trigger", "")))
         if u.path == "/api/pause":
             return self._send(200, pause_job())
         if u.path == "/api/resume":

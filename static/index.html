@@ -56,6 +56,14 @@
             </select>
           </label>
         </div>
+        <div class="field">
+          <span class="lbl">触发词（训练时写进标注的那个词）</span>
+          <div class="seedrow">
+            <input id="trigger" placeholder="例如 sks person，留空表示不检查">
+            <button id="btn-trigger" class="chip mini">检查标注</button>
+          </div>
+          <div id="trigger-info" class="hint" style="margin-top:6px">训练前建议确认：标注里没有这个词，训练出来的 LoRA 就没有「名字」可绑定。</div>
+        </div>
         <div class="row">
           <label>训练步数
             <input id="steps" type="number" value="300" min="10" step="50">
@@ -302,11 +310,14 @@
     <div class="grid">
       <div class="card">
         <h2>推理试跑</h2>
+        <label>触发词（自动拼在提示词最前，留空则不加）
+          <input id="i-trigger" placeholder="sks person">
+        </label>
         <label>提示词
           <textarea id="i-prompt" rows="4">masterpiece, best quality, a pale-skinned woman with long flowing white hair, wearing a translucent light-blue silk robe, sitting cross-legged playing a guqin on a frozen lake</textarea>
         </label>
         <label>负面提示词
-          <input id="i-neg" placeholder="worst quality, low quality, blurry">
+          <input id="i-neg" value="worst quality, low quality, multiple views, character sheet, reference sheet, watermark, text">
         </label>
         <div class="row">
           <label>LoRA
