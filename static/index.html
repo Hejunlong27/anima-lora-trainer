@@ -28,6 +28,7 @@
   <button class="tab active" data-tab="train">训练</button>
   <button class="tab" data-tab="mat">素材</button>
   <button class="tab" data-tab="infer">推理试跑</button>
+  <button class="tab" data-tab="comfy">ComfyUI</button>
   <button class="tab" data-tab="data">数据集检查</button>
   <button class="tab" data-tab="out">输出</button>
   <button class="tab" data-tab="log">记录</button>
@@ -66,10 +67,26 @@
         </div>
         <div class="row">
           <label>训练步数
-            <input id="steps" type="number" value="300" min="10" step="50">
+            <select id="steps">
+              <option value="300" selected>300 · 快速验证</option>
+              <option value="600">600</option>
+              <option value="1200">1200 · 标准</option>
+              <option value="1800">1800 · 完整</option>
+              <option value="2400">2400</option>
+              <option value="__custom">自定义…</option>
+            </select>
+            <input id="steps-c" type="number" min="10" step="10" placeholder="输入步数" hidden>
           </label>
           <label>保存间隔
-            <input id="save_every" type="number" placeholder="自动" min="10">
+            <select id="save_every">
+              <option value="">自动（总步数 ÷ 8）</option>
+              <option value="50">每 50 步</option>
+              <option value="100">每 100 步</option>
+              <option value="200">每 200 步</option>
+              <option value="300">每 300 步</option>
+              <option value="__custom">自定义…</option>
+            </select>
+            <input id="save_every-c" type="number" min="10" placeholder="输入间隔" hidden>
           </label>
         </div>
         <div class="row">
@@ -97,9 +114,14 @@
               <option value="adafactor">adafactor</option>
             </select>
           </label>
-          <label>种子
-            <input id="seed" type="number" value="42">
-          </label>
+          <div class="field">
+            <span class="lbl">种子</span>
+            <div class="seedrow">
+              <input id="seed" type="number" value="42">
+              <label class="inline"><input type="checkbox" id="seed-rand"> 随机</label>
+              <button id="btn-seed-roll" class="chip mini">换一个</button>
+            </div>
+          </div>
         </div>
         <div class="presets">
           <span>预设</span>
@@ -319,26 +341,67 @@
         <label>负面提示词
           <input id="i-neg" value="worst quality, low quality, multiple views, character sheet, reference sheet, watermark, text">
         </label>
-        <div class="row">
-          <label>LoRA
-            <select id="i-lora"><option value="">不使用</option></select>
-          </label>
-          <label>权重
-            <input id="i-mult" type="number" value="1.0" step="0.1" min="0" max="2">
-          </label>
-        </div>
+        <label>LoRA
+          <select id="i-lora"><option value="">不使用</option></select>
+        </label>
         <div class="row">
           <label>宽 × 高
-            <input id="i-size" value="512x768">
+            <select id="i-size">
+              <option value="512x768" selected>512 × 768（2:3）</option>
+              <option value="768x512">768 × 512（3:2）</option>
+              <option value="640x960">640 × 960（2:3）</option>
+              <option value="832x1248">832 × 1248（训练桶）</option>
+              <option value="1024x1024">1024 × 1024（1:1）</option>
+              <option value="__custom">自定义…</option>
+            </select>
+            <input id="i-size-c" placeholder="如 720x1080" hidden>
           </label>
-          <label>步数 / CFG
-            <input id="i-steps" value="20 / 5">
+          <label>LoRA 权重
+            <select id="i-mult">
+              <option value="0.6">0.6</option>
+              <option value="0.8">0.8</option>
+              <option value="0.9">0.9</option>
+              <option value="1.0" selected>1.0</option>
+              <option value="1.2">1.2</option>
+              <option value="1.5">1.5</option>
+              <option value="__custom">自定义…</option>
+            </select>
+            <input id="i-mult-c" type="number" step="0.05" min="0" max="2" placeholder="权重" hidden>
           </label>
         </div>
         <div class="row">
-          <label>种子
-            <input id="i-seed" type="number" value="42">
+          <label>采样步数
+            <select id="i-steps-n">
+              <option value="8">8</option>
+              <option value="12">12</option>
+              <option value="16">16</option>
+              <option value="20" selected>20</option>
+              <option value="28">28</option>
+              <option value="32">32</option>
+              <option value="40">40</option>
+            </select>
           </label>
+          <label>CFG
+            <select id="i-cfg">
+              <option value="1.0">1.0</option>
+              <option value="2.0">2.0</option>
+              <option value="3.0">3.0</option>
+              <option value="4.0">4.0</option>
+              <option value="5.0" selected>5.0</option>
+              <option value="6.0">6.0</option>
+              <option value="7.0">7.0</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <div class="field">
+            <span class="lbl">种子</span>
+            <div class="seedrow">
+              <input id="i-seed" type="number" value="42">
+              <label class="inline"><input type="checkbox" id="i-seed-rand"> 随机</label>
+              <button id="btn-i-roll" class="chip mini">换一个</button>
+            </div>
+          </div>
           <label>&nbsp;
             <button id="btn-infer" class="primary">生成</button>
           </label>
@@ -355,6 +418,22 @@
         <pre id="i-log" class="log short"></pre>
       </div>
     </div>
+  </section>
+
+  <section id="tab-comfy" class="panel">
+    <div class="notice" id="comfy-note">
+      <span id="comfy-state">正在检测 ComfyUI…</span>
+      <div class="chart-tools">
+        <button id="btn-comfy-check" class="chip">重新检测</button>
+        <button id="btn-comfy-outer" class="chip">新窗口打开</button>
+      </div>
+    </div>
+    <div class="comfy-wrap"><iframe id="comfy-frame" title="ComfyUI"></iframe></div>
+    <p class="hint">
+      这里内嵌本机 ComfyUI（<code>127.0.0.1:8188</code>），可直接拖工作流、调参、出图。
+      要让 ComfyUI 加载本机训练的 LoRA，需把 <code>output</code> 目录接进它的 <code>models/loras</code>（或用 <code>extra_model_paths.yaml</code> 指过去）。
+      注意：ComfyUI 与训练、打标互斥，开训前请先关掉。
+    </p>
   </section>
 
   <section id="tab-data" class="panel">

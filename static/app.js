@@ -10,6 +10,7 @@ function activateTab(name) {
   $("tab-" + name).classList.add("active");
   if (name === "out") loadOutputs();
   if (name === "mat") { prefillMate(); refreshGpu(); checkComfy(); }
+  if (name === "comfy") checkComfyFrame();
   history.replaceState(null, "", "#" + name);
 }
 
@@ -90,12 +91,12 @@ $("btn-start").addEventListener("click", async () => {
     dataset: path,
     name: $("name").value.trim(),
     resolution: $("resolution").value,
-    steps: $("steps").value,
-    save_every: $("save_every").value,
+    steps: comboVal("steps", "steps-c"),
+    save_every: comboVal("save_every", "save_every-c"),
     dim: $("dim").value,
     lr: $("lr").value,
     optimizer: $("optimizer").value,
-    seed: $("seed").value,
+    seed: seedValue("seed", "seed-rand"),
     trigger: $("trigger").value.trim(),
   };
   const r = await api("/api/start", {
@@ -117,8 +118,8 @@ $("btn-stop").addEventListener("click", async () => {
 });
 
 async function runInfer() {
-  const size = ($("i-size").value || "512x768").split("x");
-  const st = ($("i-steps").value || "20 / 5").split("/");
+  const size = (comboVal("i-size", "i-size-c") || "512x768").split("x");
+  const mult = comboVal("i-mult", "i-mult-c") || "1.0";
   const trig = $("i-trigger").value.trim().replace(/,\s*$/, "");
   const body = $("i-prompt").value.trim();
   const prompt = trig ? (body ? `${trig}, ${body}` : trig) : body;
@@ -128,12 +129,12 @@ async function runInfer() {
     prompt,
     negative: $("i-neg").value.trim(),
     lora: $("i-lora").value,
-    multiplier: $("i-mult").value,
+    multiplier: mult,
     width: parseInt(size[0]) || 512,
     height: parseInt(size[1]) || 768,
-    steps: parseInt(st[0]) || 20,
-    guidance: parseFloat(st[1]) || 5,
-    seed: $("i-seed").value,
+    steps: parseInt($("i-steps-n").value) || 20,
+    guidance: parseFloat($("i-cfg").value) || 5,
+    seed: seedValue("i-seed", "i-seed-rand"),
   };
   const r = await api("/api/start", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg),
@@ -212,6 +213,10 @@ async function poll() {
   $("btn-pause").disabled = !(running && d.job === "train");
   $("btn-infer").disabled = running;
 
+  if (!d.log || !d.log.length) {
+    $("log").textContent = "（暂无日志：开始训练后会在这里实时滚动）";
+    $("i-log").textContent = "（暂无日志）";
+  }
   if (d.log && d.log.length) {
     const el = $("log");
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -657,3 +662,72 @@ $("btn-infer-dir").onclick = () => {
     body: JSON.stringify({ path: dir }),
   });
 };
+
+function comboVal(id, cid) {
+  const s = $(id);
+  if (!s) return "";
+  if (s.value === "__custom") {
+    const c = $(cid);
+    return c && c.value.trim() ? c.value.trim() : "";
+  }
+  return s.value;
+}
+
+function comboBind(id, cid) {
+  const s = $(id), c = $(cid);
+  if (!s || !c) return;
+  s.addEventListener("change", () => {
+    c.hidden = s.value !== "__custom";
+    if (!c.hidden) c.focus();
+  });
+}
+
+function rollSeedTo(id) {
+  const v = Math.floor(Math.random() * 2147483646) + 1;
+  $(id).value = v;
+  return v;
+}
+
+function seedValue(inputId, randId) {
+  const r = $(randId);
+  return r && r.checked ? rollSeedTo(inputId) : ($(inputId).value || "42");
+}
+
+[["steps", "steps-c"], ["save_every", "save_every-c"],
+ ["i-size", "i-size-c"], ["i-mult", "i-mult-c"]].forEach(([a, b]) => comboBind(a, b));
+
+if ($("btn-seed-roll")) $("btn-seed-roll").onclick = () => rollSeedTo("seed");
+if ($("btn-i-roll")) $("btn-i-roll").onclick = () => rollSeedTo("i-seed");
+if ($("seed-rand")) $("seed-rand").onchange = () => {
+  $("seed").disabled = $("seed-rand").checked;
+  if ($("seed-rand").checked) rollSeedTo("seed");
+};
+if ($("i-seed-rand")) $("i-seed-rand").onchange = () => {
+  $("i-seed").disabled = $("i-seed-rand").checked;
+  if ($("i-seed-rand").checked) rollSeedTo("i-seed");
+};
+
+async function checkComfyFrame() {
+  const note = $("comfy-note"), st = $("comfy-state"), fr = $("comfy-frame");
+  if (!st) return;
+  let d;
+  try { d = await api("/api/comfy"); } catch (e) { return; }
+  if (d.online) {
+    note.classList.add("free");
+    st.textContent = "已连接 ComfyUI（127.0.0.1:8188）";
+    if (fr.dataset.loaded !== "1") {
+      fr.src = "http://127.0.0.1:8188";
+      fr.dataset.loaded = "1";
+    }
+  } else {
+    note.classList.remove("free");
+    st.textContent = "ComfyUI 未启动：请先启动 ComfyUI（端口 8188），再点「重新检测」";
+    if (fr.dataset.loaded === "1") { fr.src = "about:blank"; fr.dataset.loaded = ""; }
+  }
+}
+if ($("btn-comfy-check")) {
+  $("btn-comfy-check").onclick = checkComfyFrame;
+  $("btn-comfy-outer").onclick = () => window.open("http://127.0.0.1:8188", "_blank");
+  document.querySelector('.tab[data-tab="comfy"]').addEventListener("click", checkComfyFrame);
+  checkComfyFrame();
+}
