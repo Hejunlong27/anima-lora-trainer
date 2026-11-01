@@ -48,11 +48,7 @@ async function loadDefaults() {
   if (d.datasets && d.datasets.length) $("dataset-path").value = d.datasets[0];
   if (d.datasets && d.datasets.length) $("s-path").value = d.datasets[0];
   window.__paths = d.paths || {};
-  if (d.latest_infer) {
-    $("i-result").innerHTML = `<img src="/api/image?path=${encodeURIComponent(d.latest_infer)}" alt="最近一次出图">`;
-    const pth = $("i-path");
-    if (pth) pth.textContent = d.latest_infer;
-  }
+  if (d.latest_infer) showInferImage(d.latest_infer);
   fillLoras(d.outputs || []);
   const miss = Object.entries(d.exists || {}).filter(([, v]) => !v).map(([k]) => k);
   if (miss.length) logLocal("警告：以下依赖缺失 " + miss.join(", "));
@@ -123,6 +119,7 @@ async function runInfer() {
   const trig = $("i-trigger").value.trim().replace(/,\s*$/, "");
   const body = $("i-prompt").value.trim();
   const prompt = trig ? (body ? `${trig}, ${body}` : trig) : body;
+  lastImgPath = "";
   $("i-result").innerHTML = '<span class="muted">生成中…</span>';
   const cfg = {
     kind: "infer",
@@ -217,7 +214,9 @@ async function poll() {
     $("log").textContent = "（暂无日志：开始训练后会在这里实时滚动）";
     $("i-log").textContent = "（暂无日志）";
   }
-  if (d.log && d.log.length) {
+  const logKey = d.log && d.log.length ? `${d.log.length}|${d.log[d.log.length - 1]}` : "";
+  if (d.log && d.log.length && logKey !== lastLogKey) {
+    lastLogKey = logKey;
     const el = $("log");
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     el.textContent = d.log.join("\n");
@@ -229,11 +228,7 @@ async function poll() {
     }
   }
 
-  if (d.job === "infer" && d.result) {
-    $("i-result").innerHTML = `<img src="/api/image?path=${encodeURIComponent(d.result)}&t=${Date.now()}" alt="推理结果">`;
-    const pth = $("i-path");
-    if (pth) pth.textContent = d.result;
-  }
+  if (d.job === "infer" && d.result) showInferImage(d.result);
   if (d.job === "train" && !running && d.status === "done") loadOutputs();
 
   const mp = $("m-pill");
@@ -730,4 +725,22 @@ if ($("btn-comfy-check")) {
   $("btn-comfy-outer").onclick = () => window.open("http://127.0.0.1:8188", "_blank");
   document.querySelector('.tab[data-tab="comfy"]').addEventListener("click", checkComfyFrame);
   checkComfyFrame();
+}
+
+var lastImgPath = "";
+var lastLogKey = "";
+
+function showInferImage(path) {
+  if (!path || path === lastImgPath) return;
+  lastImgPath = path;
+  const box = $("i-result");
+  if (!box) return;
+  let img = box.querySelector("img");
+  if (!img) {
+    box.innerHTML = '<img alt="推理结果">';
+    img = box.querySelector("img");
+  }
+  img.src = "/api/image?path=" + encodeURIComponent(path) + "&t=" + Date.now();
+  const pth = $("i-path");
+  if (pth) pth.textContent = path;
 }
