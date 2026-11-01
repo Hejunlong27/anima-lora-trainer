@@ -205,3 +205,9 @@ button.ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 /* [hidden] 会被 .drop img 的 display:block 覆盖，这里显式压回去 */
 .drop img[hidden] { display: none !important; }
 .seedrow .chip.mini { flex: 0 0 auto; white-space: nowrap; }
+
+.i-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; margin-top: 8px; font-size: 11px; color: var(--muted);
+}
+.i-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

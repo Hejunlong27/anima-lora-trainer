@@ -46,6 +46,12 @@ async function loadDefaults() {
   sel.onchange = () => { $("dataset-path").value = sel.value; };
   if (d.datasets && d.datasets.length) $("dataset-path").value = d.datasets[0];
   if (d.datasets && d.datasets.length) $("s-path").value = d.datasets[0];
+  window.__paths = d.paths || {};
+  if (d.latest_infer) {
+    $("i-result").innerHTML = `<img src="/api/image?path=${encodeURIComponent(d.latest_infer)}" alt="最近一次出图">`;
+    const pth = $("i-path");
+    if (pth) pth.textContent = d.latest_infer;
+  }
   fillLoras(d.outputs || []);
   const miss = Object.entries(d.exists || {}).filter(([, v]) => !v).map(([k]) => k);
   if (miss.length) logLocal("警告：以下依赖缺失 " + miss.join(", "));
@@ -220,6 +226,8 @@ async function poll() {
 
   if (d.job === "infer" && d.result) {
     $("i-result").innerHTML = `<img src="/api/image?path=${encodeURIComponent(d.result)}&t=${Date.now()}" alt="推理结果">`;
+    const pth = $("i-path");
+    if (pth) pth.textContent = d.result;
   }
   if (d.job === "train" && !running && d.status === "done") loadOutputs();
 
@@ -640,3 +648,12 @@ async function checkTrigger() {
   }
 }
 if ($("btn-trigger")) $("btn-trigger").onclick = checkTrigger;
+
+$("btn-infer-dir").onclick = () => {
+  const dir = (window.__paths && window.__paths.infer) || "";
+  if (!dir) { alert("尚未获取到出图目录，请刷新页面"); return; }
+  api("/api/open", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: dir }),
+  });
+};

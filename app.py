@@ -1212,9 +1212,15 @@ class Handler(BaseHTTPRequestHandler):
             ds_root = BASE / "dataset"
             if ds_root.is_dir():
                 datasets = [str(p) for p in ds_root.iterdir() if p.is_dir()]
+            latest = None
+            if INFER.is_dir():
+                pngs = sorted(INFER.glob("*.png"), key=lambda x: x.stat().st_mtime)
+                if pngs:
+                    latest = str(pngs[-1])
             return self._send(200, {
-                "datasets": datasets, "outputs": list_outputs(),
-                "paths": {"dit": str(DIT), "te": str(TE), "vae": str(VAE), "sd_scripts": str(SDS)},
+                "datasets": datasets, "outputs": list_outputs(), "latest_infer": latest,
+                "paths": {"dit": str(DIT), "te": str(TE), "vae": str(VAE), "sd_scripts": str(SDS),
+                          "output": str(OUTPUT), "infer": str(INFER)},
                 "exists": {"dit": DIT.exists(), "te": TE.exists(), "vae": VAE.exists(), "sds": SDS.exists()},
             })
         if u.path == "/api/gpu":
